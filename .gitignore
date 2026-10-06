@@ -23,6 +23,8 @@ wheels/
 .venv/
 venv/
 ENV/
+*.joblib
+*.pkl
 
 # Node
 node_modules/
