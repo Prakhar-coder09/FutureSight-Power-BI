@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autonomous Maintenance Assistant Pipeline | BITS Pilani Apex Project</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Chart.js, PapaParse, Lucide Icons -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="dark-theme">
+    <!-- BUSINESSSIGHT AI & WAR ROOM LAUNCHER BANNER -->
+    <div style="background: linear-gradient(90deg, #1e1b4b, #0f172a); border-bottom: 2px solid #6366f1; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; font-family: system-ui, -apple-system, sans-serif; color: white; z-index: 9999; position: relative;">
+        <div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 4px; font-family: monospace;">WAR ROOM ACTIVE</span>
+                <strong style="color: #818cf8; font-size: 14px;">BusinessSight AI Enterprise Cockpit & War Room</strong>
+            </div>
+            <div style="font-size: 12px; color: #cbd5e1; margin-top: 3px;">See Next Month. Simulate What-If. Act Before Impact (Microsoft OJ Simulated Dataset).</div>
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <a href="http://localhost:3000" target="_blank" style="background: #4f46e5; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: bold; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4); display: flex; align-items: center; gap: 6px;">
+                <span>Launch BusinessSight AI & War Room (Port 3000) &rarr;</span>
+            </a>
+            <a href="http://localhost:8000/docs" target="_blank" style="background: #1e293b; color: #94a3b8; border: 1px solid #334155; padding: 8px 12px; border-radius: 6px; text-decoration: none; font-size: 12px; font-weight: 500;">
+                <span>API Docs (Port 8000)</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- TOP NAVIGATION BAR -->
+    <header class="navbar">
+        <div class="nav-left">
+            <div class="logo-badge">
+                <i data-lucide="cpu" class="logo-icon"></i>
+            </div>
+            <div class="brand-info">
+                <h1>AUTONOMOUS MAINTENANCE ASSISTANT PIPELINE</h1>
+                <span class="sub-brand">Manufacturing Predictive Maintenance & Degradation Analytics • CMAPSS Dataset</span>
+            </div>
+        </div>
+        
+        <div class="nav-right">
+            <div class="status-pill online">
+                <span class="pulse-dot"></span>
+                <span>PIPELINE RUN: SUCCESS</span>
+            </div>
+            <div class="student-tag">
+                <span class="name">Prakhar Tyagi</span>
+                <span class="roll">BITS Pilani • 2025EB1100149</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- DASHBOARD CONTAINER -->
+    <div class="app-layout">
+        <!-- NAVIGATION SIDEBAR / TAB SYSTEM -->
+        <nav class="sidebar">
+            <div class="nav-section-title">MONITORING & ANALYTICS</div>
+            <button class="nav-tab active" data-tab="tab-dashboard">
+                <i data-lucide="layout-dashboard"></i> Executive Dashboard
+            </button>
+            <button class="nav-tab" data-tab="tab-trends">
+                <i data-lucide="activity"></i> Sensor Trends & RUL
+            </button>
+            <button class="nav-tab" data-tab="tab-pipeline">
+                <i data-lucide="git-merge"></i> 12-Step Pipeline Flow
+            </button>
+
+            <div class="nav-section-title">REPORTS & DATA</div>
+            <button class="nav-tab" data-tab="tab-report">
+                <i data-lucide="file-bar-chart"></i> Data Quality & Heatmap
+            </button>
+            <button class="nav-tab" data-tab="tab-dataset">
+                <i data-lucide="table"></i> Cleaned Dataset Explorer
+            </button>
+
+            <div class="sidebar-footer">
+                <div class="project-info-card">
+                    <div class="info-header"><i data-lucide="shield-check"></i> Model Status</div>
+                    <p>C-MAPSS Sensor Array Preprocessed & Scaled. 15 Units Monitored.</p>
+                </div>
+            </div>
+        </nav>
+
+        <!-- MAIN CONTENT AREA -->
+        <main class="content-body">
+            
+            <!-- TAB 1: EXECUTIVE DASHBOARD -->
+            <section id="tab-dashboard" class="tab-pane active">
+                <div class="page-title-bar">
+                    <div>
+                        <h2>Fleet Health & RUL Executive Overview</h2>
+                        <p class="subtitle">Real-time status of 15 jet engine units, failure prediction alerts, and pipeline metrics.</p>
+                    </div>
+                    <div class="action-buttons">
+                        <button class="btn primary" onclick="reloadDataset()"><i data-lucide="refresh-cw"></i> Refresh Telemetry</button>
+                    </div>
+                </div>
+
+                <!-- HERO METRICS GRID -->
+                <div class="metrics-grid">
+                    <div class="metric-card glass">
+                        <div class="card-icon cyan"><i data-lucide="hard-drive"></i></div>
+                        <div class="card-data">
+                            <span class="card-title">Total Units Monitored</span>
+                            <span class="card-value" id="stat-total-units">15</span>
+                            <span class="card-sub">Fleet C-MAPSS Engines</span>
+                        </div>
+                    </div>
+
+                    <div class="metric-card glass">
+                        <div class="card-icon emerald"><i data-lucide="clock"></i></div>
+                        <div class="card-data">
+                            <span class="card-title">Average RUL Remaining</span>
+                            <span class="card-value" id="stat-avg-rul">--</span>
+                            <span class="card-sub">Cycles before failure</span>
+                        </div>
+                    </div>
+
+                    <div class="metric-card glass">
+                        <div class="card-icon rose"><i data-lucide="alert-triangle"></i></div>
+                        <div class="card-data">
+                            <span class="card-title">Critical Failure Risk</span>
+                            <span class="card-value text-rose" id="stat-critical-count">--</span>
+                            <span class="card-sub">Alert Level 2 (RUL ≤ 30)</span>
+                        </div>
+                    </div>
+
+                    <div class="metric-card glass">
+                        <div class="card-icon amber"><i data-lucide="shield-alert"></i></div>
+                        <div class="card-data">
+                            <span class="card-title">Warning State Units</span>
+                            <span class="card-value text-amber" id="stat-warning-count">--</span>
+                            <span class="card-sub">Alert Level 1 (RUL 31–60)</span>
+                        </div>
+                    </div>
+
+                    <div class="metric-card glass">
+                        <div class="card-icon purple"><i data-lucide="check-circle-2"></i></div>
+                        <div class="card-data">
+                            <span class="card-title">Data Cleaning Integrity</span>
+                            <span class="card-value text-emerald">100%</span>
+                            <span class="card-sub">0 nulls, 0 dupes remaining</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FLEET HEALTH GRID & HIGH RISK WATCHLIST -->
+                <div class="grid-2col mt-6">
+                    <div class="panel glass">
+                        <div class="panel-header">
+                            <h3><i data-lucide="layout-grid"></i> Engine Fleet Health Status</h3>
+                            <span class="badge blue">15 Active Units</span>
+                        </div>
+                        <div class="units-grid" id="units-grid-container">
+                            <!-- Dynamically loaded machine health cards -->
+                            <div class="loading-state"><i data-lucide="loader-2" class="spin"></i> Loading engine telemetry...</div>
+                        </div>
+                    </div>
+
+                    <div class="panel glass">
+                        <div class="panel-header">
+                            <h3><i data-lucide="siren" class="text-rose"></i> Immediate Action Required</h3>
+                            <span class="badge rose">Critical RUL Alert</span>
+                        </div>
+                        <div class="critical-watchlist" id="critical-watchlist-container">
+                            <!-- Watchlist items -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 2: SENSOR TRENDS & RUL ANALYTICS -->
+            <section id="tab-trends" class="tab-pane">
+                <div class="page-title-bar">
+                    <div>
+                        <h2>Sensor Degradation & Time-Series Analytics</h2>
+                        <p class="subtitle">Inspect normalized sensor curves over cycles with interactive 5 & 10 cycle rolling averages.</p>
+                    </div>
+                </div>
+
+                <div class="chart-controls-bar glass">
+                    <div class="control-group">
+                        <label><i data-lucide="box"></i> Select Machine Unit:</label>
+                        <select id="unit-selector" onchange="updateCharts()">
+                            <!-- Unit options dynamically populated -->
+                        </select>
+                    </div>
+
+                    <div class="control-group">
+                        <label><i data-lucide="sliders"></i> Primary Sensor:</label>
+                        <select id="sensor-selector" onchange="updateCharts()">
+                            <option value="s_2">s_2 (LPC Outlet Temp)</option>
+                            <option value="s_4">s_4 (LPT Outlet Temp)</option>
+                            <option value="s_11" selected>s_11 (HPC Outlet Static Press)</option>
+                            <option value="s_12">s_12 (Fan Ratio Speed)</option>
+                            <option value="s_15">s_15 (Bypass Ratio)</option>
+                            <option value="s_21">s_21 (HPT Coolant Bleed)</option>
+                        </select>
+                    </div>
+
+                    <div class="control-group toggles">
+                        <label class="toggle-btn active" id="toggle-raw" onclick="toggleDataset('raw')">
+                            <input type="checkbox" checked hidden> Normalized Signal
+                        </label>
+                        <label class="toggle-btn active" id="toggle-roll5" onclick="toggleDataset('roll5')">
+                            <input type="checkbox" checked hidden> 5-Cycle Rolling
+                        </label>
+                        <label class="toggle-btn active" id="toggle-roll10" onclick="toggleDataset('roll10')">
+                            <input type="checkbox" checked hidden> 10-Cycle Rolling
+                        </label>
+                    </div>
+                </div>
+
+                <div class="panel glass mt-4">
+                    <div class="panel-header">
+                        <h3><i data-lucide="line-chart"></i> Sensor Degradation Curve vs Time Cycle</h3>
+                        <div class="chart-legend-indicator">
+                            <span class="legend-dot cyan"></span> Raw Signal
+                            <span class="legend-dot amber"></span> 5-Cycle Mean
+                            <span class="legend-dot purple"></span> 10-Cycle Mean
+                        </div>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="trendChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- MULTI-SENSOR COMPARISON GRID -->
+                <div class="grid-2col mt-6">
+                    <div class="panel glass">
+                        <div class="panel-header">
+                            <h3><i data-lucide="activity"></i> s_2 & s_4 Temperature Signals</h3>
+                        </div>
+                        <div class="chart-wrapper-sm">
+                            <canvas id="tempSensorsChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="panel glass">
+                        <div class="panel-header">
+                            <h3><i data-lucide="gauge"></i> s_11 & s_12 Pressure & Speed Signals</h3>
+                        </div>
+                        <div class="chart-wrapper-sm">
+                            <canvas id="pressSensorsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: 12-STEP PIPELINE FLOW -->
+            <section id="tab-pipeline" class="tab-pane">
+                <div class="page-title-bar">
+                    <div>
+                        <h2>12-Step Autonomous Cleaning & Feature Pipeline</h2>
+                        <p class="subtitle">Complete visual flow of data transformations from raw ingestion to model features and RUL labels.</p>
+                    </div>
+                </div>
+
+                <div class="pipeline-flowchart" id="pipeline-flowchart-container">
+                    <!-- 12 steps generated by JS -->
+                </div>
+
+                <div class="panel glass mt-6" id="step-detail-panel">
+                    <div class="panel-header">
+                        <h3 id="step-detail-title"><i data-lucide="info"></i> Click any step above to inspect python logic & transformation outputs</h3>
+                    </div>
+                    <div class="panel-body" id="step-detail-body">
+                        <p class="text-muted">Select a step in the pipeline map above to view its data engineering specifications, input/output schemas, and cleaning formulas.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 4: DATA QUALITY & HEATMAP REPORT -->
+            <section id="tab-report" class="tab-pane">
+                <div class="page-title-bar">
+                    <div>
+                        <h2>Data Quality & Sensor Correlation Report</h2>
+                        <p class="subtitle">Step 11 comparison report metrics and Step 12 correlation heatmap analysis.</p>
+                    </div>
+                </div>
+
+                <div class="grid-2col">
+                    <div class="panel glass">
+                        <div class="panel-header">
+                            <h3><i data-lucide="flame"></i> Sensor Correlation Matrix (Heatmap)</h3>
+                            <span class="badge blue">Step 12 Output</span>
+                        </div>
+                        <div class="heatmap-img-container">
+                            <img src="data/processed/correlation_heatmap.png" alt="Correlation Heatmap" class="report-img" onerror="this.src='https://via.placeholder.com/600x500/1e293b/38bdf8?text=Correlation+Heatmap+Plot'">
+                        </div>
+                    </div>
+
+                    <div class="panel glass">
+                        <div class="panel-header">
+                            <h3><i data-lucide="bar-chart-2"></i> Sensor Degradation Curve Plot</h3>
+                            <span class="badge emerald">Unit 1 Analysis</span>
+                        </div>
+                        <div class="heatmap-img-container">
+                            <img src="data/processed/sensor_trends_unit_1.png" alt="Sensor Trends Unit 1" class="report-img" onerror="this.src='https://via.placeholder.com/600x500/1e293b/10b981?text=Sensor+Trends+Plot'">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel glass mt-6">
+                    <div class="panel-header">
+                        <h3><i data-lucide="file-text"></i> Preprocessing Comparison Report (Raw vs Cleaned)</h3>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="report-table">
+                            <thead>
+                                <tr>
+                                    <th>Sensor</th>
+                                    <th>Raw Missing</th>
+                                    <th>Raw Missing %</th>
+                                    <th>Clean Missing</th>
+                                    <th>Raw Outliers (IQR)</th>
+                                    <th>Clean Outliers</th>
+                                </tr>
+                            </thead>
+                            <tbody id="quality-table-body">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 5: CLEANED DATASET EXPLORER -->
+            <section id="tab-dataset" class="tab-pane">
+                <div class="page-title-bar">
+                    <div>
+                        <h2>Cleaned Feature Dataset Explorer</h2>
+                        <p class="subtitle">Inspect preprocessed C-MAPSS dataset records with rolling features, normalized signals, and RUL targets.</p>
+                    </div>
+                    <div class="action-buttons">
+                        <a href="data/processed/clean_machine_data.csv" download class="btn secondary"><i data-lucide="download"></i> Download CSV (Train)</a>
+                        <a href="data/processed/clean_machine_test_data.csv" download class="btn secondary"><i data-lucide="download"></i> Download CSV (Test)</a>
+                    </div>
+                </div>
+
+                <div class="filter-controls glass">
+                    <div class="search-box">
+                        <i data-lucide="search"></i>
+                        <input type="text" id="table-search" placeholder="Search by Unit ID or Cycle..." oninput="filterTable()">
+                    </div>
+
+                    <div class="filter-group">
+                        <label>Filter Alert Level:</label>
+                        <select id="alert-filter" onchange="filterTable()">
+                            <option value="all">All Alerts</option>
+                            <option value="2">Critical Failure (Level 2)</option>
+                            <option value="1">Warning (Level 1)</option>
+                            <option value="0">Normal Operation (Level 0)</option>
+                        </select>
+                    </div>
+
+                    <div class="row-count-badge" id="row-count-display">Showing 0 rows</div>
+                </div>
+
+                <div class="panel glass mt-4">
+                    <div class="table-responsive table-scroll">
+                        <table class="data-table">
+                            <thead id="dataset-thead">
+                                <!-- Headers -->
+                            </thead>
+                            <tbody id="dataset-tbody">
+                                <!-- Rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="pagination-bar" id="pagination-controls">
+                        <!-- Pagination -->
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

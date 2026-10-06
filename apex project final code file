@@ -1,0 +1,544 @@
+"""
+Manufacturing: Autonomous Maintenance Assistant Pipeline
+---------------------------------------------------------
+BITS Pilani - Apex Project
+Student Name: Prakhar Tyagi
+Roll Number: 2025EB1100149
+Submission Date: July 14, 2026
+"""
+
+import os
+import urllib.request
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Column configurations for C-MAPSS dataset
+SENSOR_COLS = [f"s_{i}" for i in range(1, 22)]
+COL_NAMES = ["unit_id", "cycle", "op_setting_1", "op_setting_2", "op_setting_3"] + SENSOR_COLS
+
+# =====================================================================
+# STEP 1: Load/Download Dataset & Synthetic Fallback Generator
+# =====================================================================
+
+def download_file(url, dest_path):
+    """Downloads a file from a URL to a destination path."""
+    try:
+        print(f"  Attempting to download from {url}...")
+        urllib.request.urlretrieve(url, dest_path)
+        print(f"  Successfully downloaded to {dest_path}")
+        return True
+    except Exception as e:
+        print(f"  Failed to download: {e}")
+        return False
+
+def generate_synthetic_data(data_dir):
+    """Generates realistic synthetic CMAPSS-like raw dataset with intentional flaws."""
+    print("  Generating synthetic CMAPSS-like raw data with intentional flaws for pipeline testing...")
+    np.random.seed(42)
+    n_units = 15
+    train_records = []
+    test_records = []
+    test_rul = []
+    
+    # Baselines and trends mimicking actual CMAPSS sensors
+    sensor_baselines = {
+        's_1': 518.67, 's_2': 642.5, 's_3': 1589.0, 's_4': 1400.0, 's_5': 14.62,
+        's_6': 21.61, 's_7': 553.0, 's_8': 2388.0, 's_9': 9046.0, 's_10': 1.3,
+        's_11': 47.0, 's_12': 521.0, 's_13': 2388.0, 's_14': 8138.0, 's_15': 8.4,
+        's_16': 0.03, 's_17': 392.0, 's_18': 2388.0, 's_19': 100.0, 's_20': 39.0,
+        's_21': 23.3
+    }
+    sensor_trends = {
+        's_2': (1, 0.05), 's_3': (1, 0.15), 's_4': (1, 0.2), 's_7': (-1, 0.08),
+        's_8': (1, 0.01), 's_11': (1, 0.02), 's_12': (-1, 0.08), 's_13': (1, 0.01),
+        's_15': (1, 0.002), 's_17': (1, 0.04), 's_20': (-1, 0.03), 's_21': (-1, 0.03)
+    }
+
+    # Generate Train Dataset
+    for i in range(1, n_units + 1):
+        # Format the unit identifiers inconsistently to test step 3
+        if i % 3 == 0:
+            unit_id_str = f"Unit_{i}"
+        elif i % 3 == 1:
+            unit_id_str = f"{i}.0"
+        else:
+            unit_id_str = str(i)
+            
+        max_lifetime = np.random.randint(120, 240)
+        
+        for cycle in range(1, max_lifetime + 1):
+            # Simulate timestamp gaps/uneven sampling (skip ~2% of cycles randomly)
+            if np.random.rand() < 0.02 and 1 < cycle < max_lifetime:
+                continue
+                
+            row = {
+                "unit_id": unit_id_str,
+                "cycle": cycle,
+                "op_setting_1": np.random.normal(0.002, 0.001),
+                "op_setting_2": np.random.normal(0.0002, 0.0001),
+                "op_setting_3": 100.0
+            }
+            
+            deg_frac = (cycle / max_lifetime) ** 2
+            
+            for s in SENSOR_COLS:
+                base = sensor_baselines[s]
+                val = base
+                if s in sensor_trends:
+                    direction, rate = sensor_trends[s]
+                    val += direction * rate * deg_frac * base * 0.05
+                    
+                val += np.random.normal(0, base * 0.003)
+                
+                # Introduce missing values (Step 4 testing)
+                if np.random.rand() < 0.015:
+                    val = np.nan
+                    
+                # Introduce outliers / spikes (Step 6 testing)
+                if np.random.rand() < 0.005:
+                    val = val * (10 if np.random.rand() > 0.5 else 0.1)
+                
+                row[s] = val
+                
+            train_records.append(row)
+            
+            # Introduce duplicated cycles (Step 5 testing)
+            if np.random.rand() < 0.008 and cycle > 1:
+                dup_row = row.copy()
+                dup_row["op_setting_1"] += 0.0005
+                train_records.append(dup_row)
+
+    # Generate Test Dataset & RUL list
+    for i in range(1, n_units + 1):
+        unit_id_str = f"Unit_{i}" if i % 3 == 0 else (f"{i}.0" if i % 3 == 1 else str(i))
+        full_lifetime = np.random.randint(120, 240)
+        truncated_lifetime = np.random.randint(40, full_lifetime - 20)
+        test_rul.append(full_lifetime - truncated_lifetime)
+        
+        for cycle in range(1, truncated_lifetime + 1):
+            row = {
+                "unit_id": unit_id_str,
+                "cycle": cycle,
+                "op_setting_1": np.random.normal(0.002, 0.001),
+                "op_setting_2": np.random.normal(0.0002, 0.0001),
+                "op_setting_3": 100.0
+            }
+            
+            deg_frac = (cycle / full_lifetime) ** 2
+            for s in SENSOR_COLS:
+                base = sensor_baselines[s]
+                val = base
+                if s in sensor_trends:
+                    direction, rate = sensor_trends[s]
+                    val += direction * rate * deg_frac * base * 0.05
+                    
+                val += np.random.normal(0, base * 0.003)
+                
+                if np.random.rand() < 0.015:
+                    val = np.nan
+                if np.random.rand() < 0.005:
+                    val = val * (10 if np.random.rand() > 0.5 else 0.1)
+                
+                row[s] = val
+            test_records.append(row)
+
+    train_df = pd.DataFrame(train_records)
+    test_df = pd.DataFrame(test_records)
+    
+    # Save files to disk
+    train_df.to_csv(os.path.join(data_dir, "train_FD001.txt"), sep=" ", header=False, index=False)
+    test_df.to_csv(os.path.join(data_dir, "test_FD001.txt"), sep=" ", header=False, index=False)
+    with open(os.path.join(data_dir, "RUL_FD001.txt"), "w") as f:
+        for val in test_rul:
+            f.write(f"{val}\n")
+            
+    print(f"  Generated training dataset ({len(train_df)} rows)")
+    print(f"  Generated test dataset ({len(test_df)} rows)")
+
+def load_or_download_dataset(data_dir="data"):
+    """Prepares the dataset directory and files (by download or fallback simulation)."""
+    print("\n--- Step 1: Loading / Ingesting Dataset ---")
+    raw_dir = os.path.join(data_dir, "raw")
+    processed_dir = os.path.join(data_dir, "processed")
+    os.makedirs(raw_dir, exist_ok=True)
+    os.makedirs(processed_dir, exist_ok=True)
+    
+    base_url = "https://raw.githubusercontent.com/alr-packages/CMAPSS/master/CMAPSS/"
+    files = ["train_FD001.txt", "test_FD001.txt", "RUL_FD001.txt"]
+    
+    download_success = True
+    for f in files:
+        dest = os.path.join(raw_dir, f)
+        url = base_url + f
+        if not download_file(url, dest):
+            download_success = False
+            break
+            
+    if not download_success:
+        print("  Internet connection issue or mirror offline. Initiating synthetic fallback generator...")
+        generate_synthetic_data(raw_dir)
+    else:
+        print("  Successfully downloaded C-MAPSS dataset files from mirror.")
+        
+    return raw_dir
+
+# =====================================================================
+# STEP 2: Data Inspection Report
+# =====================================================================
+
+def inspect_raw_data(df, dataset_name="Raw Train Data"):
+    """Checks dimensions, missing values, identifiers, and sequences."""
+    print(f"\n--- Step 2: Data Inspection Report for {dataset_name} ---")
+    print(f"  Shape: {df.shape}")
+    print(f"  Total records: {len(df)}")
+    print(f"  Data types present: {df.dtypes.unique()}")
+    print(f"  Total missing values: {df.isnull().sum().sum()}")
+    print(f"  Sample unit IDs: {df['unit_id'].unique()[:5]}")
+    cycle_stats = df.groupby('unit_id')['cycle'].max()
+    print(f"  Cycle counts per machine - min: {cycle_stats.min()}, max: {cycle_stats.max()}")
+
+# =====================================================================
+# STEPS 3 - 6: Cleaning Pipeline
+# =====================================================================
+
+def standardize_unit_ids(df):
+    """Step 3: Standardize varying machine identifier strings into integers."""
+    df = df.copy()
+    if 'unit_id' in df.columns:
+        numeric_ids = df['unit_id'].astype(str).str.extract(r'(\d+\.?\d*)')[0]
+        df['unit_id'] = numeric_ids.astype(float).astype(int)
+    return df
+
+def handle_missing_values(df, sensor_cols, max_gap_to_interpolate=5):
+    """Step 4: Interpolate small sampling gaps and forward/backward fill edges."""
+    df = df.copy()
+    def interpolate_unit(group):
+        group = group.sort_values('cycle')
+        group[sensor_cols] = group[sensor_cols].interpolate(
+            method='linear', limit=max_gap_to_interpolate, limit_direction='both'
+        )
+        group[sensor_cols] = group[sensor_cols].bfill().ffill()
+        return group
+    df = df.groupby('unit_id', group_keys=False).apply(interpolate_unit)
+    return df
+
+def clean_cycle_data(df):
+    """Step 5: Verify sequence and remove duplicate time-cycles by averaging."""
+    df = df.copy()
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    value_cols = [c for c in numeric_cols if c not in ['unit_id', 'cycle']]
+    
+    df_dedup = df.groupby(['unit_id', 'cycle'])[value_cols].mean().reset_index()
+    return df_dedup.sort_values(['unit_id', 'cycle']).reset_index(drop=True)
+
+def detect_and_treat_outliers(df, sensor_cols, iqr_multiplier=3.0):
+    """Step 6: Detect impossible spikes and cap outliers to IQR bounds per unit."""
+    df = df.copy()
+    for col in sensor_cols:
+        def treat_unit_outliers(group):
+            q1, q3 = group[col].quantile(0.25), group[col].quantile(0.75)
+            iqr = q3 - q1
+            if iqr == 0:
+                return group
+            lower_bound = q1 - iqr_multiplier * iqr
+            upper_bound = q3 + iqr_multiplier * iqr
+            group[col] = group[col].clip(lower_bound, upper_bound)
+            return group
+        df = df.groupby('unit_id', group_keys=False).apply(treat_unit_outliers)
+    return df
+
+def run_cleaning_pipeline(df, sensor_cols):
+    """Executes cleaning operations sequentially (Steps 3-6)."""
+    print("\n--- Running Cleaning Pipeline (Steps 3-6) ---")
+    df = standardize_unit_ids(df)
+    print(f"  Step 3: Standardized machine identifiers. Shape: {df.shape}")
+    
+    df = clean_cycle_data(df)
+    print(f"  Step 5: Cleaned cycle sequences (deduplicated). Shape: {df.shape}")
+    
+    df = handle_missing_values(df, sensor_cols)
+    print(f"  Step 4: Interpolated missing values. Missing counts remaining: {df[sensor_cols].isnull().sum().sum()}")
+    
+    df = detect_and_treat_outliers(df, sensor_cols)
+    print(f"  Step 6: Handled outlier spikes (IQR capped). Shape: {df.shape}")
+    return df
+
+# =====================================================================
+# STEPS 7 - 9: Feature Engineering Pipeline
+# =====================================================================
+
+def resample_and_align(df, sensor_cols):
+    """Step 7: Reindex to contiguous cycles range per unit to align sampling rates."""
+    df = df.copy()
+    aligned_dfs = []
+    for unit, group in df.groupby('unit_id'):
+        group = group.sort_values('cycle')
+        min_cycle, max_cycle = int(group['cycle'].min()), int(group['cycle'].max())
+        full_cycles = pd.DataFrame({'cycle': range(min_cycle, max_cycle + 1)})
+        aligned_group = pd.merge(full_cycles, group, on='cycle', how='left')
+        aligned_group['unit_id'] = unit
+        
+        all_cols = ['op_setting_1', 'op_setting_2', 'op_setting_3'] + sensor_cols
+        aligned_group[all_cols] = aligned_group[all_cols].interpolate(method='linear', limit_direction='both')
+        aligned_dfs.append(aligned_group)
+    return pd.concat(aligned_dfs, ignore_index=True)
+
+def normalize_sensors_native(df, sensor_cols):
+    """Step 8: Scale sensor columns to [0, 1] range using native pandas calculations."""
+    df = df.copy()
+    variance = df[sensor_cols].var()
+    non_constant = [col for col in sensor_cols if variance[col] > 1e-8]
+    constant = [col for col in sensor_cols if variance[col] <= 1e-8]
+    
+    if non_constant:
+        min_vals = df[non_constant].min()
+        max_vals = df[non_constant].max()
+        range_vals = max_vals - min_vals
+        range_vals = range_vals.replace(0, 1.0) # avoid division by zero
+        df[non_constant] = (df[non_constant] - min_vals) / range_vals
+        
+    for col in constant:
+        df[col] = 0.0
+        
+    print(f"  Step 8: Normalized sensor values. (Non-constant: {len(non_constant)}, Constant: {len(constant)})")
+    return df
+
+def generate_rolling_features(df, sensor_cols, windows=[5, 10]):
+    """Step 9: Compute rolling averages, mins, maxs, and stds for each sensor."""
+    df = df.copy()
+    new_features = {}
+    for w in windows:
+        grouped = df.groupby('unit_id')
+        for col in sensor_cols:
+            rolling_obj = grouped[col].rolling(window=w, min_periods=1)
+            new_features[f"{col}_roll_mean_{w}"] = rolling_obj.mean().reset_index(level=0, drop=True)
+            new_features[f"{col}_roll_std_{w}"] = rolling_obj.std().fillna(0.0).reset_index(level=0, drop=True)
+            new_features[f"{col}_roll_min_{w}"] = rolling_obj.min().reset_index(level=0, drop=True)
+            new_features[f"{col}_roll_max_{w}"] = rolling_obj.max().reset_index(level=0, drop=True)
+            
+    new_features_df = pd.DataFrame(new_features)
+    return pd.concat([df, new_features_df], axis=1)
+
+def run_feature_engineering_pipeline(df, sensor_cols, windows=[5, 10]):
+    """Executes time alignment, sensor scaling, and feature generation (Steps 7-9)."""
+    print("\n--- Running Feature Engineering Pipeline (Steps 7-9) ---")
+    df = resample_and_align(df, sensor_cols)
+    print(f"  Step 7: Resampled and aligned time cycle sequences. Shape: {df.shape}")
+    
+    df = normalize_sensors_native(df, sensor_cols)
+    
+    df = generate_rolling_features(df, sensor_cols, windows=windows)
+    print(f"  Step 9: Generated rolling features (windows: {windows}). Shape: {df.shape}")
+    return df
+
+# =====================================================================
+# STEP 10: Integrate Maintenance Indicators
+# =====================================================================
+
+def calculate_train_rul(df):
+    """Calculates Remaining Useful Life (RUL) for training engine units."""
+    df = df.copy()
+    max_cycles = df.groupby('unit_id')['cycle'].max().reset_index().rename(columns={'cycle': 'max_cycle'})
+    df = pd.merge(df, max_cycles, on='unit_id', how='left')
+    df['RUL'] = df['max_cycle'] - df['cycle']
+    df.drop(columns=['max_cycle'], inplace=True)
+    return df
+
+def calculate_test_rul(df, rul_file_path):
+    """Calculates RUL for testing units using ground truth final test RUL files."""
+    df = df.copy()
+    if not os.path.exists(rul_file_path):
+        print(f"  Warning: Ground truth RUL file not found at {rul_file_path}. Using fallback train method.")
+        return calculate_train_rul(df)
+        
+    with open(rul_file_path, 'r') as f:
+        rul_ground_truth = [float(line.strip()) for line in f.readlines() if line.strip()]
+        
+    unique_units = sorted(df['unit_id'].unique())
+    if len(unique_units) != len(rul_ground_truth):
+        print("  Warning: Unit count does not match RUL entries. Using fallback train method.")
+        return calculate_train_rul(df)
+        
+    rul_map = dict(zip(unique_units, rul_ground_truth))
+    last_cycles = df.groupby('unit_id')['cycle'].max().reset_index().rename(columns={'cycle': 'last_cycle'})
+    df = pd.merge(df, last_cycles, on='unit_id', how='left')
+    df['gt_final_rul'] = df['unit_id'].map(rul_map)
+    df['RUL'] = df['gt_final_rul'] + df['last_cycle'] - df['cycle']
+    df.drop(columns=['last_cycle', 'gt_final_rul'], inplace=True)
+    return df
+
+def run_maintenance_integration(df, is_train=True, rul_file_path=None, critical_threshold=30, warning_threshold=60):
+    """Step 10: Integrate remaining useful life (RUL) and set alerts (critical = 2, warning = 1, normal = 0)."""
+    print("\n--- Running Maintenance Indicators Integration (Step 10) ---")
+    if is_train:
+        df = calculate_train_rul(df)
+    else:
+        df = calculate_test_rul(df, rul_file_path)
+        
+    df['maintenance_alert'] = (df['RUL'] <= critical_threshold).astype(int)
+    df['alert_level'] = 0
+    df.loc[(df['RUL'] <= warning_threshold) & (df['RUL'] > critical_threshold), 'alert_level'] = 1
+    df.loc[df['RUL'] <= critical_threshold, 'alert_level'] = 2
+    
+    print(f"  Step 10: Computed RUL & labels. Critical warning percentage: {df['maintenance_alert'].mean() * 100:.2f}%")
+    return df
+
+# =====================================================================
+# STEPS 11 - 12: Reporting & Visualization
+# =====================================================================
+
+def generate_quality_report(df_raw, df_clean, sensor_cols, output_path):
+    """Step 11: Compares raw and processed datasets and exports a Markdown report."""
+    print("\n--- Step 11: Generating Data Quality Comparison Report ---")
+    report_lines = [
+        "# Data Quality Comparison Report",
+        "\nThis report summarizes data metrics before and after the preprocessing pipeline.",
+        "\n## 1. Dataset Dimensions",
+        f"- **Raw Dataset**: {df_raw.shape[0]} rows, {df_raw.shape[1]} columns",
+        f"- **Processed Dataset**: {df_clean.shape[0]} rows, {df_clean.shape[1]} columns",
+        "\n## 2. Missing Values Summary"
+    ]
+    
+    raw_missing = df_raw[sensor_cols].isnull().sum()
+    clean_missing = df_clean[sensor_cols].isnull().sum() if all(c in df_clean.columns for c in sensor_cols) else pd.Series(0, index=sensor_cols)
+    
+    report_lines.append("\n| Sensor | Raw Missing Count | Raw Missing % | Clean Missing Count | Clean Missing % |")
+    report_lines.append("|---|---|---|---|---|")
+    for s in sensor_cols:
+        raw_c, raw_p = raw_missing[s], (raw_missing[s] / len(df_raw)) * 100
+        clean_c, clean_p = clean_missing[s], (clean_missing[s] / len(df_clean)) * 100
+        report_lines.append(f"| {s} | {raw_c:.0f} | {raw_p:.2f}% | {clean_c:.0f} | {clean_p:.2f}% |")
+        
+    report_lines.append("\n## 3. Outlier Statistics (values > 1.5 IQR from quartiles)")
+    report_lines.append("\n| Sensor | Raw Outliers Count | Raw Outliers % | Clean Outliers Count | Clean Outliers % |")
+    report_lines.append("|---|---|---|---|---|")
+    
+    for col in sensor_cols:
+        # Raw outlier check
+        q1_r, q3_r = df_raw[col].quantile(0.25), df_raw[col].quantile(0.75)
+        iqr_r = q3_r - q1_r
+        raw_out = ((df_raw[col] < (q1_r - 1.5 * iqr_r)) | (df_raw[col] > (q3_r + 1.5 * iqr_r))).sum() if iqr_r > 0 else 0
+        raw_out_pct = (raw_out / len(df_raw)) * 100
+        
+        # Clean outlier check
+        q1_c, q3_c = df_clean[col].quantile(0.25), df_clean[col].quantile(0.75)
+        iqr_c = q3_c - q1_c
+        clean_out = ((df_clean[col] < (q1_c - 1.5 * iqr_c)) | (df_clean[col] > (q3_c + 1.5 * iqr_c))).sum() if iqr_c > 0 else 0
+        clean_out_pct = (clean_out / len(df_clean)) * 100
+        
+        report_lines.append(f"| {col} | {raw_out:.0f} | {raw_out_pct:.2f}% | {clean_out:.0f} | {clean_out_pct:.2f}% |")
+        
+    with open(output_path, 'w') as f:
+        f.write('\n'.join(report_lines))
+    print(f"  Step 11: Data quality report saved to {output_path}")
+
+def generate_visual_analysis(df, output_dir, unit_id=1):
+    """Step 12: Generates sensor trend plots and correlation heatmap matrix."""
+    print("\n--- Step 12: Generating Sensor Trend & Correlation Visual Analysis ---")
+    
+    # 1. Sensor Trends for single machine
+    unit_df = df[df['unit_id'] == unit_id].sort_values('cycle')
+    if len(unit_df) > 0:
+        key_sensors = ['s_2', 's_4', 's_11', 's_12']
+        fig, axes = plt.subplots(len(key_sensors), 1, figsize=(10, 2.5 * len(key_sensors)), sharex=True)
+        for ax, col in zip(axes, key_sensors):
+            ax.plot(unit_df['cycle'], unit_df[col], color='#1f77b4', linewidth=1.8, label='Clean normalized signal')
+            roll_col = f"{col}_roll_mean_10"
+            if roll_col in unit_df.columns:
+                ax.plot(unit_df['cycle'], unit_df[roll_col], color='#ff7f0e', linestyle='--', linewidth=1.5, label='10-Cycle Rolling Mean')
+            ax.set_ylabel(col, fontsize=9, fontweight='bold')
+            ax.grid(True, linestyle=':', alpha=0.6)
+            ax.legend(loc='upper left', fontsize=8)
+            
+        axes[-1].set_xlabel('Time Cycle', fontsize=10, fontweight='bold')
+        plt.suptitle(f"Sensor Trends & Degradation Patterns for Machine Unit {unit_id}\n(Approaching Critical Failure / Maintenance)", fontsize=11, fontweight='bold', y=0.98)
+        plt.tight_layout()
+        trend_path = os.path.join(output_dir, f"sensor_trends_unit_{unit_id}.png")
+        plt.savefig(trend_path, dpi=150)
+        plt.close()
+        print(f"  Step 12: Sensor degradation curve plotted to {trend_path}")
+        
+    # 2. Correlation heatmap
+    cols_to_correlate = ['op_setting_1', 'op_setting_2', 'RUL', 'maintenance_alert'] + \
+                        ['s_2', 's_4', 's_11', 's_12'] + \
+                        ['s_2_roll_mean_10', 's_4_roll_mean_10', 's_11_roll_mean_10', 's_12_roll_mean_10']
+    available_cols = [c for c in cols_to_correlate if c in df.columns]
+    
+    plt.figure(figsize=(11, 9))
+    sns.heatmap(df[available_cols].corr(), annot=True, fmt=".2f", cmap="coolwarm", cbar=True, square=True, 
+                annot_kws={"size": 7}, linewidths=0.5, cbar_kws={"shrink": 0.8})
+    plt.title("Correlation Matrix: Settings, Sensors, Features, and Remaining Useful Life (RUL)", fontsize=11, fontweight='bold', pad=15)
+    plt.tight_layout()
+    
+    heatmap_path = os.path.join(output_dir, "correlation_heatmap.png")
+    plt.savefig(heatmap_path, dpi=150)
+    plt.close()
+    print(f"  Step 12: Correlation heatmap matrix plotted to {heatmap_path}")
+
+# =====================================================================
+# Main Orchestration Loop
+# =====================================================================
+
+def main():
+    print("=======================================================================")
+    print("      Executing Autonomous Maintenance Assistant Pipeline (12 Steps)   ")
+    print("=======================================================================")
+    
+    # Path configuration
+    data_dir = "data"
+    raw_dir = load_or_download_dataset(data_dir)
+    processed_dir = os.path.join(data_dir, "processed")
+    
+    train_file = os.path.join(raw_dir, "train_FD001.txt")
+    test_file = os.path.join(raw_dir, "test_FD001.txt")
+    rul_file = os.path.join(raw_dir, "RUL_FD001.txt")
+    
+    # Step 1: Load raw space-separated text datasets
+    print("  Loading raw dataset files...")
+    train_raw = pd.read_csv(train_file, sep=r'\s+', names=COL_NAMES, header=None)
+    test_raw = pd.read_csv(test_file, sep=r'\s+', names=COL_NAMES, header=None)
+    
+    # Save copy of raw for reporting
+    train_raw_copy = train_raw.copy()
+    
+    # Step 2: Inspect raw data characteristics
+    inspect_raw_data(train_raw, "Raw C-MAPSS Train Set")
+    
+    # Steps 3-6: Clean data
+    train_clean = run_cleaning_pipeline(train_raw, SENSOR_COLS)
+    
+    # Steps 7-9: Feature engineering
+    train_features = run_feature_engineering_pipeline(train_clean, SENSOR_COLS, windows=[5, 10])
+    
+    # Step 10: Integrate Remaining Useful Life (RUL) & alerts
+    train_final = run_maintenance_integration(train_features, is_train=True)
+    
+    # Process test data using same steps
+    print("\n--- Processing Test Set ---")
+    test_clean = run_cleaning_pipeline(test_raw, SENSOR_COLS)
+    test_features = run_feature_engineering_pipeline(test_clean, SENSOR_COLS, windows=[5, 10])
+    test_final = run_maintenance_integration(test_features, is_train=False, rul_file_path=rul_file)
+    
+    # Step 11: Create comparison data quality report
+    report_output = os.path.join(processed_dir, "data_quality_report.md")
+    generate_quality_report(train_raw_copy, train_final, SENSOR_COLS, report_output)
+    
+    # Step 12: Export outputs and generate plots
+    final_output_path = os.path.join(processed_dir, "clean_machine_data.csv")
+    train_final.to_csv(final_output_path, index=False)
+    print(f"\n  Exported primary processed dataset to {final_output_path}")
+    
+    test_output_path = os.path.join(processed_dir, "clean_machine_test_data.csv")
+    test_final.to_csv(test_output_path, index=False)
+    print(f"  Exported test processed dataset to {test_output_path}")
+    
+    generate_visual_analysis(train_final, processed_dir, unit_id=1)
+    
+    print("\n=======================================================================")
+    print("                      Pipeline Run Completed Successfully!            ")
+    print("=======================================================================")
+
+if __name__ == "__main__":
+    main()
